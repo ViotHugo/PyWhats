@@ -1,5 +1,6 @@
 import tkinter as tk
-from tkinter import simpledialog, scrolledtext
+from tkinter import ttk, simpledialog 
+from ttkthemes import ThemedTk
 import asyncio
 import websockets
 import threading
@@ -7,21 +8,35 @@ import threading
 class ChatClient:
     def __init__(self, root):
         self.root = root
-        self.root.title("Chat Messenger")
-        self.root.configure(bg="#ECE5DD")  # Couleur de fond
+        self.root.title("PyWhats")
+        
+        # Utilisation d'un thème vert
+        self.style = ttk.Style(self.root)
+        self.style.configure('TButton', background='#25D366', font=('Helvetica', 12), borderwidth='4')
+        self.style.configure('TEntry', font=('Helvetica', 12), padding=10)
+        self.style.configure('TLabel', font=('Helvetica', 14, 'bold'), background='#25D366')
 
-        # Zone de texte pour l'affichage des messages
-        self.text_area = scrolledtext.ScrolledText(root, state='disabled', wrap=tk.WORD, bg="#FFFFFF", fg="#000000")
-        self.text_area.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
+        # Barre de menu supérieure
+        self.top_frame = ttk.Frame(self.root, padding="3 3 12 12", relief=tk.RIDGE, style='TFrame')
+        self.top_frame.pack(side=tk.TOP, fill=tk.X)
+        self.partner_username_label = ttk.Label(self.top_frame, text="Interlocuteur: Inconnu", style='TLabel')
+        self.partner_username_label.pack(side=tk.LEFT, padx=10)
 
-        # Champ de saisie de message
-        self.msg_entry = tk.Entry(root, width=50, bg="#FFFFFF", fg="#000000")
-        self.msg_entry.pack(padx=20, pady=10)
-        self.msg_entry.focus_set()  # Met le focus sur le champ de saisie
+        # Configuration de la zone de chat avec Canvas
+        self.setup_chat_area()
 
-        # Bouton d'envoi
-        self.send_button = tk.Button(root, text="Send", command=self.send_message, bg="#075E54", fg="#FFFFFF")
-        self.send_button.pack(padx=20, pady=20)
+        # Champ de saisie de message et bouton d'envoi
+        self.entry_frame = ttk.Frame(self.root, padding="3 3 12 12", relief=tk.RIDGE)
+        self.entry_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.msg_entry = ttk.Entry(self.entry_frame, width=50, style='TEntry')
+        self.msg_entry.pack(side=tk.LEFT, padx=20, pady=10, expand=True)
+        self.send_button = ttk.Button(self.entry_frame, text="Send", command=self.send_message, style='TButton')
+        self.send_button.pack(side=tk.RIGHT, padx=20, pady=20)
+
+        # Username
+        self.username = simpledialog.askstring("Nom d'utilisateur", "Entrez votre nom d'utilisateur:", parent=root)
+        if not self.username:
+            self.username = "Anonyme"
 
         self.websocket = None
         self.loop = asyncio.get_event_loop()
@@ -32,6 +47,58 @@ class ChatClient:
     def start_asyncio_loop(self):
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self.connect())
+        
+    def setup_chat_area(self):
+        self.chat_canvas = tk.Canvas(self.root, bg='white')
+        self.chat_frame = ttk.Frame(self.chat_canvas)
+        self.scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.chat_canvas.yview)
+        self.chat_canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.scrollbar.pack(side="right", fill="y")
+        self.chat_canvas.pack(side="left", fill="both", expand=True)
+        self.chat_canvas.create_window((0, 0), window=self.chat_frame, anchor="nw", tags="self.chat_frame")
+
+        self.chat_frame.bind("<Configure>", self.on_frame_configure)
+
+    def on_frame_configure(self, event=None):
+        self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+
+    def create_chat_bubbles(self, message, sent=False):
+        bubble = ttk.Frame(self.chat_frame, style='Bubble.TFrame')
+        label = ttk.Label(bubble, text=message, style='Bubble.TLabel')
+        label.pack(padx=10, pady=5)
+        bubble.pack(fill='x', padx=10, pady=5, anchor='e' if sent else 'w')
+
+        self.style.configure('Bubble.TFrame', background='#e2ffc7' if sent else '#ffffff')
+        self.style.configure('Bubble.TLabel', background='#e2ffc7' if sent else '#ffffff')
+
+    def display_message(self, message, sent=False):
+        if ":" in message:
+            username, message_content = message.split(":", 1)
+            message_content = message_content.strip()
+
+            if not sent and username != self.username:
+                self.partner_username_label.config(text=f"Interlocuteur: {username}")
+                message_to_display = f"{username}: {message_content}"
+            else:
+                message_to_display = message
+        else:
+            message_to_display = message
+
+        self.create_chat_bubbles(message_to_display, sent=sent)
+
+    def send_message(self):
+        message = self.msg_entry.get()
+        if message:
+            full_message = f"{self.username}: {message}"
+            asyncio.run_coroutine_threadsafe(self.websocket.send(full_message), self.loop)
+            self.display_message(f"You: {message}", sent=True)
+            self.msg_entry.delete(0, tk.END)
+
+    def on_close(self):
+        if self.websocket:
+            asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
+        self.root.destroy()
 
     async def connect(self):
         self.websocket = await websockets.connect("ws://localhost:6789")
@@ -39,27 +106,7 @@ class ChatClient:
             message = await self.websocket.recv()
             self.loop.call_soon_threadsafe(self.display_message, message)
 
-    def display_message(self, message):
-        if self.text_area:
-            self.text_area.config(state=tk.NORMAL)
-            self.text_area.insert(tk.END, f"\n{message}")
-            self.text_area.config(state=tk.DISABLED)
-
-    def send_message(self):
-        message = self.msg_entry.get()
-        if message:
-            # Planifier l'envoi du message dans la boucle d'événements asyncio
-            asyncio.run_coroutine_threadsafe(self.websocket.send(message), self.loop)
-            self.display_message(f"You: {message}")
-            self.msg_entry.delete(0, tk.END)
-
-
-    def on_close(self):
-        if self.websocket:
-            asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
-        self.root.destroy()
-
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ThemedTk()
     client = ChatClient(root)
     root.mainloop()
