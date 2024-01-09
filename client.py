@@ -1,5 +1,7 @@
+import os
 import tkinter as tk
-from tkinter import ttk, simpledialog 
+from tkinter import ttk, simpledialog, filedialog
+import base64
 from ttkthemes import ThemedTk
 import asyncio
 import websockets
@@ -38,11 +40,19 @@ class ChatClient:
         self.send_button = ttk.Button(self.entry_frame, text="Send", command=self.send_message, style='TButton')
         self.send_button.pack(side=tk.RIGHT, padx=20, pady=20)
 
+        # Bouton d'envoi de fichier
+        self.send_file_button = ttk.Button(self.entry_frame, text="Send File", command=self.send_file, style='TButton')
+        self.send_file_button.pack(side=tk.RIGHT, padx=5)
+
         # Username
         self.username = simpledialog.askstring("Nom d'utilisateur", "Entrez votre nom d'utilisateur:", parent=root)
         if not self.username:
             self.username = "Anonyme"
 
+        self.last_received_file_name = None
+        self.download_mode = False
+        self.is_next_message_file = False
+        self.last_received_file = None
         self.websocket = None
         self.loop = asyncio.get_event_loop()
         self.thread = threading.Thread(target=self.start_asyncio_loop, args=(), daemon=True)
@@ -79,28 +89,80 @@ class ChatClient:
         self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
 
     def create_chat_bubbles(self, message, sent=False):
-        bubble = ttk.Frame(self.chat_frame, style='Bubble.TFrame')
-        label = ttk.Label(bubble, text=message, style='Bubble.TLabel')
-        label.pack(padx=10, pady=5)
-        bubble.pack(fill='x', padx=10, pady=5, anchor='e' if sent else 'w')
+
+        # Création d'un style pour les bulles de chat
+        style_name = 'SentBubble.TFrame' if sent else 'ReceivedBubble.TFrame'
+        self.style.configure(style_name, background='#e2ffc7' if sent else '#ffffff', relief='flat')
+
+        bubble = ttk.Frame(self.chat_frame, style=style_name)
+        
+        # Configurez le Label pour gérer le retour à la ligne
+        label = ttk.Label(bubble, text=message, style='Bubble.TLabel', wraplength=350)
+        label.pack(padx=10, pady=5, fill='both', expand=True)
+
+        # Positionner la bulle à droite si 'sent' est True, sinon à gauche
+        if sent:
+            bubble.pack(fill='x', padx=10, pady=5, anchor='e')
+        else:
+            bubble.pack(fill='x', padx=10, pady=5, anchor='w')
 
         self.style.configure('Bubble.TFrame', background='#e2ffc7' if sent else '#ffffff')
         self.style.configure('Bubble.TLabel', background='#e2ffc7' if sent else '#ffffff')
 
-    def display_message(self, message, sent=False):
-        if ":" in message:
-            username, message_content = message.split(":", 1)
-            message_content = message_content.strip()
 
-            if not sent and username != self.username:
-                self.partner_username_label.config(text=f"Interlocuteur: {username}")
-                message_to_display = f"{username}: {message_content}"
+    def toggle_download_button(self, download_mode):
+        if download_mode:
+            self.send_file_button.config(text="Download File", command=self.download_file)
+            self.download_mode = True
+        else:
+            self.send_file_button.config(text="Send File", command=self.send_file)
+            self.download_mode = False
+
+    def download_file(self):
+        if self.last_received_file:
+            file_path = filedialog.asksaveasfilename(
+                title="Save file",
+                initialfile=self.last_received_file_name,  # Utilisez le nom du fichier comme nom par défaut
+                filetypes=[("All files", "*.*")]
+            )
+            if file_path:
+                file_data = base64.b64decode(self.last_received_file)
+                with open(file_path, 'wb') as file:
+                    file.write(file_data)
+                self.last_received_file = None
+                self.toggle_download_button(False)  # Désactiver le download
+
+    def on_file_bubble_click(self, message):
+        if "Fichier reçu de" in message and self.last_received_file:
+            file_path = filedialog.asksaveasfilename(title="Save file", filetypes=[("All files", "*.*")])
+            if file_path:
+                file_data = base64.b64decode(self.last_received_file)
+                with open(file_path, 'wb') as file:
+                    file.write(file_data)
+                self.last_received_file = None
+
+
+    def display_message(self, message, sent=False):
+        if message.startswith("FILE:") and not sent:
+            _, username, file_name, file_content = message.split(":", 3)
+            self.last_received_file = file_content
+            self.last_received_file_name = file_name  # Stockez le nom du fichier
+            self.create_chat_bubbles(f"{username} sent a file: {file_name}. Click to download.", sent=False)
+            self.toggle_download_button(True)
+        else:
+            if ":" in message:
+                username, message_content = message.split(":", 1)
+                message_content = message_content.strip()
+
+                if not sent and username != self.username:
+                    self.partner_username_label.config(text=f"Contact : {username}")
+                    message_to_display = f"{username}: {message_content}"
+                else:
+                    message_to_display = message
             else:
                 message_to_display = message
-        else:
-            message_to_display = message
 
-        self.create_chat_bubbles(message_to_display, sent=sent)
+            self.create_chat_bubbles(message_to_display, sent=sent)
 
     def send_message(self):
         message = self.msg_entry.get()
@@ -109,6 +171,37 @@ class ChatClient:
             asyncio.run_coroutine_threadsafe(self.websocket.send(full_message), self.loop)
             self.display_message(f"You: {message}", sent=True)
             self.msg_entry.delete(0, tk.END)
+    
+    def send_file(self):
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            with open(file_path, 'rb') as file:
+                file_data = file.read()
+                encoded_file = base64.b64encode(file_data).decode()
+                file_name = os.path.basename(file_path)
+                file_message = f"FILE:{self.username}:{file_name}:{encoded_file}"
+                asyncio.run_coroutine_threadsafe(self.websocket.send(file_message), self.loop)
+                # Afficher une bulle de chat indiquant que le fichier a été envoyé
+                self.create_chat_bubbles(f"You sent a file: {file_name}", sent=True)
+
+
+    
+    def on_file_bubble_click(self, event):
+        if self.last_received_file:
+            file_path = filedialog.asksaveasfilename(title="Save file", filetypes=[("All files", "*.*")])
+            if file_path:
+                file_data = base64.b64decode(self.last_received_file)
+                with open(file_path, 'wb') as file:
+                    file.write(file_data)
+                self.last_received_file = None
+
+
+    def save_received_file(self, file_content):
+        file_data = base64.b64decode(file_content)
+        file_path = filedialog.asksaveasfilename(title="Save file", filetypes=[("All files", "*.*")])
+        if file_path:
+            with open(file_path, 'wb') as file:
+                file.write(file_data)
 
     def on_close(self):
         if self.websocket:
