@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import ttk, simpledialog, filedialog
 import base64
 from ttkthemes import ThemedTk
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 import asyncio
 import websockets
 import threading
@@ -12,36 +14,37 @@ class ChatClient:
         self.root = root
         self.root.title("PyWhats")
         
-        # Utilisation d'un thème vert
-        self.style = ttk.Style(self.root)
-        self.style.configure('TButton', background='#25D366', font=('Helvetica', 12), borderwidth='4')
-        self.style.configure('TEntry', font=('Helvetica', 12), padding=10)
-        self.style.configure('TLabel', font=('Helvetica', 14, 'bold'), background='#25D366')
+        # Choix d'un thème proche de WhatsApp
+        self.style = ttk.Style('minty')
 
-        # Configuration du grid pour le root
-        root.grid_rowconfigure(1, weight=1)  # Donne plus de poids à la rangée du Canvas
-        root.grid_columnconfigure(0, weight=1)
+        # Créer des styles personnalisés pour les cadres
+        self.style.configure('TopFrame.TFrame', background='#f0ead6')
+        self.style.configure('ChatFrame.TFrame', background='#eae0c8')
 
-        # Barre de menu supérieure
-        self.top_frame = ttk.Frame(self.root, padding="3 3 12 12", relief=tk.RIDGE, style='TFrame')
+        # Barre de menu supérieure avec mise en valeur de l'interlocuteur
+        self.top_frame = ttk.Frame(self.root, padding="3 12 12 12", style='TopFrame.TFrame')
         self.top_frame.grid(row=0, column=0, sticky="ew")
-        self.partner_username_label = ttk.Label(self.top_frame, text="Interlocuteur: Inconnu", style='TLabel')
+        self.partner_username_label = ttk.Label(
+            self.top_frame, 
+            text="Interlocuteur : Inconnu",
+            font=('Helvetica', 16, 'bold')
+        )
         self.partner_username_label.pack(side=tk.LEFT, padx=10)
 
         # Configuration de la zone de chat avec Canvas
         self.setup_chat_area()
 
         # Champ de saisie de message et bouton d'envoi
-        self.entry_frame = ttk.Frame(self.root, padding="3 3 12 12", relief=tk.RIDGE)
+        self.entry_frame = ttk.Frame(self.root, padding="3 3 12 12")
         self.entry_frame.grid(row=2, column=0, sticky="ew")
-        self.msg_entry = ttk.Entry(self.entry_frame, width=50, style='TEntry')
+        self.msg_entry = ttk.Entry(self.entry_frame, width=50)
         self.msg_entry.pack(side=tk.LEFT, padx=20, pady=10, expand=True)
         self.msg_entry.bind("<Return>", self.send_message_event)
-        self.send_button = ttk.Button(self.entry_frame, text="Send", command=self.send_message, style='TButton')
+        self.send_button = ttk.Button(self.entry_frame, text="Send", command=self.send_message)
         self.send_button.pack(side=tk.RIGHT, padx=20, pady=20)
 
         # Bouton d'envoi de fichier
-        self.send_file_button = ttk.Button(self.entry_frame, text="Send File", command=self.send_file, style='TButton')
+        self.send_file_button = ttk.Button(self.entry_frame, text="Send File", command=self.send_file)
         self.send_file_button.pack(side=tk.RIGHT, padx=5)
 
         # Username
@@ -69,7 +72,7 @@ class ChatClient:
 
     def setup_chat_area(self):
         self.chat_canvas = tk.Canvas(self.root, bg='white')
-        self.chat_frame = ttk.Frame(self.chat_canvas)
+        self.chat_frame = ttk.Frame(self.chat_canvas, style='ChatFrame.TFrame')
         self.scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.chat_canvas.yview)
         self.chat_canvas.configure(yscrollcommand=self.scrollbar.set)
 
@@ -89,25 +92,23 @@ class ChatClient:
         self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
 
     def create_chat_bubbles(self, message, sent=False):
+        # Styles personnalisés pour les bulles de chat
+        bubble_background = '#dcf8c6' if sent else '#ffffff'  # Couleurs de fond
+        self.style.configure('SentBubble.TFrame', background=bubble_background)
+        self.style.configure('ReceivedBubble.TFrame', background=bubble_background)
 
-        # Création d'un style pour les bulles de chat
-        style_name = 'SentBubble.TFrame' if sent else 'ReceivedBubble.TFrame'
-        self.style.configure(style_name, background='#e2ffc7' if sent else '#ffffff', relief='flat')
-
-        bubble = ttk.Frame(self.chat_frame, style=style_name)
+        bubble_style = 'SentBubble.TFrame' if sent else 'ReceivedBubble.TFrame'
+        bubble = ttk.Frame(self.chat_frame, style=bubble_style, padding=10)
         
-        # Configurez le Label pour gérer le retour à la ligne
-        label = ttk.Label(bubble, text=message, style='Bubble.TLabel', wraplength=350)
+        # Label avec la même couleur de fond que la bulle
+        label = ttk.Label(bubble, text=message, background=bubble_background, wraplength=350)
         label.pack(padx=10, pady=5, fill='both', expand=True)
 
-        # Positionner la bulle à droite si 'sent' est True, sinon à gauche
+        # Positionner la bulle à droite ou à gauche
         if sent:
             bubble.pack(fill='x', padx=10, pady=5, anchor='e')
         else:
             bubble.pack(fill='x', padx=10, pady=5, anchor='w')
-
-        self.style.configure('Bubble.TFrame', background='#e2ffc7' if sent else '#ffffff')
-        self.style.configure('Bubble.TLabel', background='#e2ffc7' if sent else '#ffffff')
 
 
     def toggle_download_button(self, download_mode):
@@ -215,6 +216,6 @@ class ChatClient:
             self.loop.call_soon_threadsafe(self.display_message, message)
 
 if __name__ == "__main__":
-    root = ThemedTk()
+    root = ttk.Window(themename='minty')
     client = ChatClient(root)
     root.mainloop()
