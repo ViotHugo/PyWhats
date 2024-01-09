@@ -16,9 +16,13 @@ class ChatClient:
         self.style.configure('TEntry', font=('Helvetica', 12), padding=10)
         self.style.configure('TLabel', font=('Helvetica', 14, 'bold'), background='#25D366')
 
+        # Configuration du grid pour le root
+        root.grid_rowconfigure(1, weight=1)  # Donne plus de poids à la rangée du Canvas
+        root.grid_columnconfigure(0, weight=1)
+
         # Barre de menu supérieure
         self.top_frame = ttk.Frame(self.root, padding="3 3 12 12", relief=tk.RIDGE, style='TFrame')
-        self.top_frame.pack(side=tk.TOP, fill=tk.X)
+        self.top_frame.grid(row=0, column=0, sticky="ew")
         self.partner_username_label = ttk.Label(self.top_frame, text="Interlocuteur: Inconnu", style='TLabel')
         self.partner_username_label.pack(side=tk.LEFT, padx=10)
 
@@ -27,9 +31,10 @@ class ChatClient:
 
         # Champ de saisie de message et bouton d'envoi
         self.entry_frame = ttk.Frame(self.root, padding="3 3 12 12", relief=tk.RIDGE)
-        self.entry_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.entry_frame.grid(row=2, column=0, sticky="ew")
         self.msg_entry = ttk.Entry(self.entry_frame, width=50, style='TEntry')
         self.msg_entry.pack(side=tk.LEFT, padx=20, pady=10, expand=True)
+        self.msg_entry.bind("<Return>", self.send_message_event)
         self.send_button = ttk.Button(self.entry_frame, text="Send", command=self.send_message, style='TButton')
         self.send_button.pack(side=tk.RIGHT, padx=20, pady=20)
 
@@ -43,22 +48,32 @@ class ChatClient:
         self.thread = threading.Thread(target=self.start_asyncio_loop, args=(), daemon=True)
         self.thread.start()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+    
 
     def start_asyncio_loop(self):
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self.connect())
-        
+    
+    def send_message_event(self, event):
+        self.send_message()
+
     def setup_chat_area(self):
         self.chat_canvas = tk.Canvas(self.root, bg='white')
         self.chat_frame = ttk.Frame(self.chat_canvas)
         self.scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.chat_canvas.yview)
         self.chat_canvas.configure(yscrollcommand=self.scrollbar.set)
 
-        self.scrollbar.pack(side="right", fill="y")
-        self.chat_canvas.pack(side="left", fill="both", expand=True)
+        # Utiliser grid pour positionner le scrollbar
+        self.scrollbar.grid(row=1, column=1, sticky="ns")
+
+        # Utiliser grid pour le Canvas
+        self.chat_canvas.grid(row=1, column=0, sticky="nsew")
         self.chat_canvas.create_window((0, 0), window=self.chat_frame, anchor="nw", tags="self.chat_frame")
 
         self.chat_frame.bind("<Configure>", self.on_frame_configure)
+        self.root.grid_columnconfigure(0, weight=1)  # Assure que le canvas s'élargit correctement
+        self.root.grid_rowconfigure(1, weight=1)
+
 
     def on_frame_configure(self, event=None):
         self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
