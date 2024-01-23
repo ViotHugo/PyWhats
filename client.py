@@ -61,7 +61,11 @@ class ChatClient:
         self.thread = threading.Thread(target=self.start_asyncio_loop, args=(), daemon=True)
         self.thread.start()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-    
+        # Ajouter des listes pour stocker les messages de la session (envoyés et reçus)
+        self.sent_messages = []
+        self.received_messages = []
+        # Charger les messages précédents au démarrage
+        self.load_previous_messages()
 
     def start_asyncio_loop(self):
         asyncio.set_event_loop(self.loop)
@@ -164,7 +168,14 @@ class ChatClient:
                 message_to_display = message
 
             self.create_chat_bubbles(message_to_display, sent=sent)
-
+             # Sauvegarder le message dans la liste des messages de la session (envoyés ou reçus)
+            if sent:
+                self.sent_messages.append(message)
+            else:
+                self.received_messages.append(message)
+            # Sauvegarder le message dans l'historique
+                self.save_message_to_history(message, sent)
+           
     def send_message(self):
         message = self.msg_entry.get()
         if message:
@@ -185,7 +196,31 @@ class ChatClient:
                 # Afficher une bulle de chat indiquant que le fichier a été envoyé
                 self.create_chat_bubbles(f"You sent a file: {file_name}", sent=True)
 
+    def load_previous_messages(self):
+        # Charger l'historique des messages depuis le fichier s'il existe
+        history_file_path = f"{self.username}_chat_history.txt"
+        if os.path.exists(history_file_path):
+            with open(history_file_path, 'r') as file:
+                try:
+                    messages = file.readlines()
+                    for message in messages:
+                        # Ajouter le message à la liste des messages de la session (envoyés ou reçus)
+                        if message.startswith("You"):
+                            self.sent_messages.append(message.strip())
+                        else:
+                            self.received_messages.append(message.strip())
 
+                        # Afficher le message (sans la date, le nom d'utilisateur, etc.)
+                        self.create_chat_bubbles(message.strip(), sent=True)
+                except Exception as e:
+                    print(f"Error loading previous messages: {e}")
+
+    def save_message_to_history(self, message, sent=False):
+        # Sauvegarder le message dans l'historique
+        history_file_path = f"{self.username}_chat_history.txt"
+        with open(history_file_path, 'a') as file:
+            # Sauvegarder le message (sans la date, le nom d'utilisateur, etc.)
+            file.write(f"{message}\n")
     
     def on_file_bubble_click(self, event):
         if self.last_received_file:
@@ -205,6 +240,11 @@ class ChatClient:
                 file.write(file_data)
 
     def on_close(self):
+        # Sauvegarder les messages de la session dans un fichier à la fermeture
+        session_history_path = f"{self.username}_session_history.txt"
+        with open(session_history_path, 'w') as session_file:
+            session_file.write("\n".join(self.sent_messages + self.received_messages))
+
         if self.websocket:
             asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
         self.root.destroy()
