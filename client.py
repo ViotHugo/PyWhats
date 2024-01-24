@@ -51,7 +51,11 @@ class ChatClient:
         self.username = simpledialog.askstring("Nom d'utilisateur", "Entrez votre nom d'utilisateur:", parent=root)
         if not self.username:
             self.username = "Anonyme"
-
+        # Ajouter des listes pour stocker les messages de la session (envoyés et reçus)
+        self.sent_messages = []
+        self.received_messages = []
+        # Charger les messages précédents au démarrage
+        self.load_previous_messages()
         self.last_received_file_name = None
         self.download_mode = False
         self.is_next_message_file = False
@@ -61,11 +65,7 @@ class ChatClient:
         self.thread = threading.Thread(target=self.start_asyncio_loop, args=(), daemon=True)
         self.thread.start()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-        # Ajouter des listes pour stocker les messages de la session (envoyés et reçus)
-        self.sent_messages = []
-        self.received_messages = []
-        # Charger les messages précédents au démarrage
-        self.load_previous_messages()
+
 
     def start_asyncio_loop(self):
         asyncio.set_event_loop(self.loop)
@@ -174,7 +174,7 @@ class ChatClient:
             else:
                 self.received_messages.append(message)
             # Sauvegarder le message dans l'historique
-                self.save_message_to_history(message, sent)
+        self.save_message_to_history(message, sent)
            
     def send_message(self):
         message = self.msg_entry.get()
